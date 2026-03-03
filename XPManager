@@ -1,0 +1,260 @@
+local XPManager = {}
+
+local Players = game:GetService("Players")
+local DataStoreService = game:GetService("DataStoreService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local ServerStorage = game:GetService("ServerStorage")
+
+-- 📡 RemoteEvents
+local updateXPEvent = ReplicatedStorage:WaitForChild("UpdateXP")
+local levelChangedEvent = ReplicatedStorage:WaitForChild("LevelChanged")
+local levelUpPopupEvent = ReplicatedStorage:WaitForChild("LevelUpPopup")
+local levelRewardPopupEvent = ReplicatedStorage:FindFirstChild("LevelRewardPopup")
+
+-- 📦 Storage Reference
+local CapeStorage = ServerStorage:WaitForChild("Capes")
+
+-- 🎁 Cape level rewards (Level -> Cape Name in ServerStorage)
+local capeRewards = {
+	[10] = "Lvl10Cape",
+	[20] = "Lvl20Cape",
+	[30] = "Lvl30Cape",
+	[40] = "Lvl40Cape",
+	[50] = "GoldCape"
+}
+
+-- 🧠 In-memory XP cache
+local playerStats = {}
+
+-- 💾 DataStore
+local xpStore = DataStoreService:GetDataStore("PlayerXPData")
+
+-- 🧢 Max level
+local MAX_LEVEL = 50
+
+-- 📈 XP level thresholds
+local xpToLevel = {
+	[1] = 0, [2] = 100, [3] = 250, [4] = 500, [5] = 800, [6] = 1200,
+	[7] = 1700, [8] = 2300, [9] = 3000, [10] = 3800, [11] = 4700, [12] = 5700,
+	[13] = 6800, [14] = 8000, [15] = 9500, [16] = 11000, [17] = 13000, [18] = 15000,
+	[19] = 17500, [20] = 20000
+}
+
+-- 🎁 Hole-based XP rewards
+local holeXPAwards = {
+	[1] = 75, [2] = 100, [3] = 125,
+}
+
+-- This function equips a cape and removes any old ones.
+function XPManager.GiveCapeToPlayer(player, capeName)
+	local character = player.Character or player.CharacterAdded:Wait()
+	if not character or not capeName then return end
+
+	-- Remove any other capes from the character first
+	for _, item in ipairs(character:GetChildren()) do
+		if item:IsA("Accessory") and (capeRewards[item:GetAttribute("RewardLevel")] or item:GetAttribute("SpecialCape")) then
+			item:Destroy()
+		end
+	end
+
+	local capeToClone = CapeStorage:FindFirstChild(capeName)
+	if capeToClone then
+		local newCape = capeToClone:Clone()
+
+		local isRewardCape = false
+		for level, name in pairs(capeRewards) do
+			if name == capeName then
+				newCape:SetAttribute("RewardLevel", level)
+				isRewardCape = true
+				break
+			end
+		end
+		if not isRewardCape then
+			newCape:SetAttribute("SpecialCape", true)
+		end
+
+		local humanoid = character:WaitForChild("Humanoid")
+		humanoid:AddAccessory(newCape)
+		print("✅ Equipped", capeName, "for", player.Name)
+	else
+		warn("Could not find cape named:", capeName, "in ServerStorage/Capes")
+	end
+end
+
+-- This function finds the BEST cape the player has earned and gives it to them.
+function XPManager.CheckAndAwardExistingCapes(player)
+	local stats = playerStats[player]
+	if not stats then return end
+
+	local bestCapeLevel = 0
+	local capeToAward = nil
+
+	-- Find the highest level cape the player has unlocked
+	for level, capeName in pairs(capeRewards) do
+		if stats.level >= level and level > bestCapeLevel then
+			bestCapeLevel = level
+			capeToAward = capeName
+		end
+	end
+
+	-- If we found a cape for them, give it
+	if capeToAward then
+		XPManager.GiveCapeToPlayer(player, capeToAward)
+	end
+end
+
+-- 🔁 Initialize on join
+function XPManager.InitPlayer(player)
+	local key = "XP_" .. player.UserId
+	local data
+
+	local success, err = pcall(function()
+		data = xpStore:GetAsync(key)
+	end)
+
+	if success and data then
+		playerStats[player] = { xp = data.xp or 0, level = data.level or 1 }
+		print("✅ XP loaded for", player.Name)
+	else
+		playerStats[player] = { xp = 0, level = 1 }
+		warn("🆕 New XP profile or load error for", player.Name, err)
+	end
+
+	local stats = playerStats[player]
+	updateXPEvent:FireClient(player, stats.xp, stats.level)
+
+	-- Leaderboard
+	local leaderstats = Instance.new("Folder")
+	leaderstats.Name = "leaderstats"
+	leaderstats.Parent = player
+
+	local levelValue = Instance.new("IntValue")
+	levelValue.Name = "Level"
+	levelValue.Value = stats.level
+	levelValue.Parent = leaderstats
+
+	local xpValue = Instance.new("IntValue")
+	xpValue.Name = "XP"
+	xpValue.Value = stats.xp
+	xpValue.Parent = leaderstats
+
+	XPManager.ConnectStatUpdates(player, levelValue, xpValue)
+
+	-- Give the player their best earned level-based cape
+	XPManager.CheckAndAwardExistingCapes(player)
+
+	-- Give a special cape if the player is the developer (Risetofamesim)
+	if player.UserId == 19307223 then
+		XPManager.GiveCapeToPlayer(player, "DEVCape")
+	end
+
+	-- Give a special cape if the player's name is Larry4
+	if player.Name == "Larry4" then
+		XPManager.GiveCapeToPlayer(player, "LarryCape")
+	end
+end
+
+-- 💾 Save on leave
+function XPManager.RemovePlayer(player)
+	local stats = playerStats[player]
+	if not stats then return end
+
+	local key = "XP_" .. player.UserId
+	pcall(function()
+		xpStore:SetAsync(key, { xp = stats.xp, level = stats.level })
+		print("💾 XP saved for", player.Name)
+	end)
+
+	playerStats[player] = nil
+end
+
+-- ➕ Core XP logic
+function XPManager.AddXP(player, amount)
+	local stats = playerStats[player]
+	if not stats or stats.level >= MAX_LEVEL then return end
+
+	stats.xp += amount
+
+	local nextLevelXP = xpToLevel[stats.level + 1]
+	while nextLevelXP and stats.xp >= nextLevelXP and stats.level < MAX_LEVEL do
+		stats.level += 1
+
+		print("🎉", player.Name, "leveled up to", stats.level)
+		levelChangedEvent:FireClient(player, stats.level)
+
+		if capeRewards[stats.level] then
+			XPManager.GiveCapeToPlayer(player, capeRewards[stats.level])
+		end
+
+		if levelUpPopupEvent then
+			levelUpPopupEvent:FireClient(player, stats.level)
+		end
+
+		if stats.level == MAX_LEVEL then
+			print("🏆 " .. player.Name .. " reached Max Level!")
+			if levelRewardPopupEvent then
+				levelRewardPopupEvent:FireClient(player, "🎩 Gold Hat unlocked! Title: Golf Pro")
+			end
+		end
+
+		nextLevelXP = xpToLevel[stats.level + 1]
+	end
+
+	updateXPEvent:FireClient(player, stats.xp, stats.level)
+
+	-- Update leaderboard
+	local leaderstats = player:FindFirstChild("leaderstats")
+	if leaderstats then
+		leaderstats.Level.Value = stats.level
+		leaderstats.XP.Value = stats.xp
+	end
+end
+
+-- 🔄 XP for hole completion
+function XPManager.AwardHoleCompleteXP(player, holeNumber)
+	local xpReward = holeXPAwards[holeNumber] or 50
+	print(string.format("🏌️ %s completed Hole %d — awarded %d XP", player.Name, holeNumber, xpReward))
+	XPManager.AddXP(player, xpReward)
+end
+
+-- 🔁 Keep leaderboard synced
+function XPManager.ConnectStatUpdates(player, levelValue, xpValue)
+	task.spawn(function()
+		while player and player.Parent do
+			local stats = XPManager.GetStats(player)
+			if stats then
+				levelValue.Value = stats.level
+				xpValue.Value = stats.xp
+			end
+			task.wait(5)
+		end
+	end)
+end
+
+-- 🔁 Reset for Prestige
+function XPManager.PrestigePlayer(player)
+	local stats = playerStats[player]
+	if not stats or stats.level < MAX_LEVEL then
+		warn("⛔ Cannot prestige yet.")
+		return
+	end
+
+	stats.level = 1
+	stats.xp = 0
+
+	updateXPEvent:FireClient(player, stats.xp, stats.level)
+	levelChangedEvent:FireClient(player, stats.level)
+
+	if levelRewardPopupEvent then
+		levelRewardPopupEvent:FireClient(player, "🏆 Prestige unlocked! Platinum Hat awarded!")
+	end
+
+	print("♻️ " .. player.Name .. " has prestiged!")
+end
+
+-- 🧠 Return stats externally
+function XPManager.GetStats(player)
+	return playerStats[player]
+end
+
+return XPManager
