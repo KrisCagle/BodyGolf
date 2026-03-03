@@ -1,0 +1,52 @@
+-- DrivingRangeManager (ModuleScript in ServerScriptService)
+
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local launchUIRemote = ReplicatedStorage:WaitForChild("LaunchRequest")
+
+local M = {}
+
+-- ✅ Teleports the player and rotates them to face the desired direction
+local function teleportPlayer(player, targetPart)
+	local char = player.Character
+	local hrp = char and char:FindFirstChild("HumanoidRootPart")
+	if not hrp or not targetPart then return end
+
+	-- Teleport slightly above the target part, facing the part's forward direction
+	local targetCFrame = targetPart.CFrame
+	local finalCFrame = targetCFrame + Vector3.new(0, 3, 0)
+
+	char:PivotTo(finalCFrame)
+end
+
+-- 🚀 Called by the controller script when the ProximityPrompt is triggered
+function M.StartRangeShot(player)
+	local char = player.Character
+	if not char then return end
+
+	local launchPad = workspace:FindFirstChild("DrivingRangeLaunchPad")
+	if not launchPad then
+		warn("❌ DrivingRangeLaunchPad not found!")
+		return
+	end
+
+	-- ✅ Teleport player to the launch pad to ensure a consistent starting point
+	teleportPlayer(player, launchPad)
+
+	-- ✅ Trigger your launch UI on the client
+	launchUIRemote:FireClient(player)
+
+	print("🏌️‍♂️ Starting driving range shot for", player.Name)
+end
+
+-- 🔁 Called by the controller script when the return zone is touched
+function M.ResetPlayer(player)
+	local launchPad = workspace:FindFirstChild("DrivingRangeLaunchPad")
+	if launchPad then
+		teleportPlayer(player, launchPad)
+		print("🔁 Player returned to the driving range launchpad.")
+	else
+		warn("⚠️ Could not return player — DrivingRangeLaunchPad missing!")
+	end
+end
+
+return M
