@@ -1,0 +1,57 @@
+-- This new version listens for state changes to reliably lock/unlock movement.
+
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local player = Players.LocalPlayer
+
+-- This function is now the central place to control player abilities
+local function updatePlayerAbilities()
+	local character = player.Character
+	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+	if not humanoid then return end
+
+	-- Check the player's current game state
+	local isInGame = player:GetAttribute("InGame")
+
+	if isInGame == true then
+		-- If IN a game, lock all movement.
+		humanoid.WalkSpeed = 0
+		humanoid.JumpPower = 0 -- Use JumpPower for older-style humanoids
+		humanoid.JumpHeight = 0 -- Also set JumpHeight for modern humanoids
+		print("Player is IN-GAME. Movement locked.")
+	else
+		-- If NOT in a game (in the clubhouse), restore normal abilities.
+		humanoid.WalkSpeed = 16 -- Default walk speed
+
+		-- Calculate jump power based on level
+		local level = 1
+		local getLevelFunc = ReplicatedStorage:WaitForChild("GetPlayerLevel")
+		local success, result = pcall(function()
+			return getLevelFunc:InvokeServer()
+		end)
+		if success and typeof(result) == "number" then
+			level = result
+		end
+
+		local jumpPower = math.clamp(25 + (level - 1) * 6, 25, 200)
+		humanoid.JumpPower = jumpPower
+		humanoid.JumpHeight = 7.2 -- Default jump height
+
+		print("Player is in CLUBHOUSE. Movement enabled.")
+	end
+end
+
+-- Listen for the "InGame" attribute to change and update abilities immediately
+player:GetAttributeChangedSignal("InGame"):Connect(updatePlayerAbilities)
+
+-- Run the function once when the character loads to set the initial state
+player.CharacterAdded:Connect(function()
+	task.wait(0.5) -- Wait half a second for attributes to load
+	updatePlayerAbilities()
+end)
+
+-- If the character already exists, run the check as well
+if player.Character then
+	task.wait(0.5)
+	updatePlayerAbilities()
+end
