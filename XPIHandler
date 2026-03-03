@@ -1,0 +1,53 @@
+-- XPUIHandler (LocalScript)
+
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local updateXPEvent = ReplicatedStorage:WaitForChild("UpdateXP")
+local player = Players.LocalPlayer
+
+local gui = player:WaitForChild("PlayerGui"):WaitForChild("GolfUI") -- or XPUI
+local barContainer = gui:WaitForChild("XPBarContainer")
+local barFill = barContainer:WaitForChild("XPBarFill")
+local xpText = barContainer:WaitForChild("XPText")
+
+-- XP Curve (should match server)
+local xpToLevel = {
+	[1] = 0,
+	[2] = 100,
+	[3] = 250,
+	[4] = 500,
+	[5] = 800,
+	[6] = 1200,
+	[7] = 1700,
+	[8] = 2300,
+	[9] = 3000,
+	[10] = 3800,
+	[11] = 4700,
+	[12] = 5700,
+}
+
+local function getXPRange(level)
+	local minXP = xpToLevel[level] or 0
+	local maxXP = xpToLevel[level + 1]
+	return minXP, maxXP
+end
+
+updateXPEvent.OnClientEvent:Connect(function(currentXP, level)
+	local minXP, nextXP = getXPRange(level)
+	nextXP = nextXP or (minXP + 1000) -- fallback for max level
+
+	local range = nextXP - minXP
+	local progress = currentXP - minXP
+	local percent = math.clamp(progress / range, 0, 1)
+
+	barFill:TweenSize(
+		UDim2.new(percent, 0, 1, 0),
+		Enum.EasingDirection.Out,
+		Enum.EasingStyle.Quad,
+		0.25,
+		true
+	)
+
+	xpText.Text = string.format("Level %d — %d / %d XP", level, currentXP, nextXP)
+end)
