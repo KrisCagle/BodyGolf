@@ -1,0 +1,32 @@
+-- This script listens for a launch request from the client and applies the force.
+-- It should be located in ServerScriptService.
+
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local requestLaunchForceEvent = ReplicatedStorage:WaitForChild("RequestLaunchForce")
+
+--// CONFIGURATION //--
+-- You can change these values to affect how powerful the launch is
+local MAX_SHOT_FORCE = 6000     -- The force of a 100% power shot
+local UPWARD_BOOST = 1.2      -- Adds a bit of an upward angle to the shot
+
+-- This function runs when the server receives a launch request
+requestLaunchForceEvent.OnServerEvent:Connect(function(player, power)
+	-- Make sure the power value is valid (between 0 and 1)
+	power = math.clamp(power, 0, 1)
+	
+	local character = player.Character
+	local hrp = character and character:FindFirstChild("HumanoidRootPart")
+
+	-- Double-check that we have a character to launch
+	if not hrp then return end
+
+	-- Calculate the direction and force
+	-- We get the forward direction from where the character is looking
+	local launchDirection = (hrp.CFrame.LookVector + Vector3.new(0, UPWARD_BOOST, 0)).Unit
+	local finalForce = launchDirection * MAX_SHOT_FORCE * power
+	
+	-- Apply the force to the character's main part
+	hrp:ApplyImpulse(finalForce)
+
+	print(string.format("🚀 Launched %s with power %.2f", player.Name, power))
+end)
