@@ -1,0 +1,89 @@
+-- This is the updated ApplyShotForce script
+
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local ServerScriptService = game:GetService("ServerScriptService")
+local Debris = game:GetService("Debris")
+local CollectionService = game:GetService("CollectionService")
+
+local XPManager = require(ServerScriptService:WaitForChild("XPManager"))
+
+-- RemoteEvents
+local launchForceRemote = ReplicatedStorage:WaitForChild("RequestLaunchForce")
+local incrementShotEvent = ReplicatedStorage:WaitForChild("IncrementShotEvent")
+
+-- 📊 Dynamic force scaling
+local function getLaunchMultiplier(level)
+	return math.clamp(50 + (level - 1) * 15, 50, 350)
+end
+
+-- 🌱 Terrain modifier by tag
+local function getTerrainModifier(part)
+	if not part then return 1 end
+	if CollectionService:HasTag(part, "Sand") then
+		return 0.4 -- Sand slows a lot
+	elseif CollectionService:HasTag(part, "Rough") then
+		return 0.7 -- Rough slows slightly
+	end
+	return 1 -- Normal terrain
+end
+
+launchForceRemote.OnServerEvent:Connect(function(player, hrp, power, dir)
+	if not player or not hrp or not power or not dir then return end
+
+	local character = player.Character
+	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+	if not humanoid then return end
+
+	-- 📈 Get XP level for force calculation
+	local stats = XPManager.GetStats(player)
+	local level = (stats and stats.level) or 1
+	local multiplier = getLaunchMultiplier(level)
+
+	-- 🧪 Terrain check
+	local rayOrigin = hrp.Position
+	local rayDirection = Vector3.new(0, -5, 0)
+	local rayParams = RaycastParams.new()
+	rayParams.FilterDescendantsInstances = {character}
+	rayParams.FilterType = Enum.RaycastFilterType.Blacklist
+
+	local rayResult = workspace:Raycast(rayOrigin, rayDirection, rayParams)
+	local terrainMod = rayResult and getTerrainModifier(rayResult.Instance) or 1
+
+	local force = power * multiplier * terrainMod
+
+	-- 🚀 Launch the character
+	local bodyVelocity = Instance.new("BodyVelocity")
+	bodyVelocity.Velocity = dir * force + Vector3.new(0, force / 2, 0)
+	bodyVelocity.MaxForce = Vector3.new(1e5, 1e5, 1e5)
+	bodyVelocity.Parent = hrp
+	Debris:AddItem(bodyVelocity, 0.5)
+
+	-- 🧠 Award XP for the shot
+	local xpAmount = math.clamp(math.floor(force / 10), 5, 15)
+	XPManager.AddXP(player, xpAmount)
+
+	-- 🛑 Disable movement while in the air
+	humanoid.WalkSpeed = 0
+	humanoid.JumpPower = 0
+	humanoid.AutoRotate = true
+
+	-- 📊 Update shot count UI
+	incrementShotEvent:FireClient(player)
+
+	-- *** NEW LOGIC HERE ***
+	-- This new section waits for the player to stop moving, then re-enables their controls.
+	task.spawn(function()
+		task.wait(1) -- Wait a second for the launch to take effect
+
+		-- Wait until the character's velocity is very low (they've stopped moving)
+		repeat
+			task.wait(0.25)
+		until hrp.AssemblyLinearVelocity.Magnitude < 0.5
+
+		-- Re-enable the player's controls
+		humanoid.WalkSpeed = 16 -- Or whatever your default walkspeed is
+		humanoid.JumpPower = 50 -- Or whatever your default jump power is
+		print(player.Name .. " has stopped moving. Re-enabling controls.")
+	end)
+	-- The old driving range logic is now removed.
+end)
