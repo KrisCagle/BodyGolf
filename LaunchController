@@ -1,0 +1,70 @@
+-- This is the new "LaunchController" script inside your on-screen LaunchButton.
+-- It replaces the old LaunchBall script entirely.
+
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
+
+local player = Players.LocalPlayer
+local camera = workspace.CurrentCamera
+local launchButton = script.Parent
+
+-- Remote Events
+local launchForceRemote = ReplicatedStorage:WaitForChild("RequestLaunchForce")
+local incrementShotEvent = ReplicatedStorage:WaitForChild("IncrementShotEvent")
+
+
+-- This function runs AFTER the player has released the button
+local function onPowerSelected(power)
+	print("⚡ Power chosen:", power)
+	local character = player.Character
+	local hrp = character and character:FindFirstChild("HumanoidRootPart")
+	if not hrp then return end
+
+	-- Face the camera direction
+	local lookDirection = Vector3.new(camera.CFrame.LookVector.X, 0, camera.CFrame.LookVector.Z).Unit
+	hrp.CFrame = CFrame.new(hrp.Position, hrp.Position + lookDirection)
+
+	-- Tell the server to apply the launch force
+	launchForceRemote:FireServer(hrp, power, lookDirection)
+
+	-- Tell the server to increment the shot count
+	incrementShotEvent:FireServer()
+end
+
+-- This function handles the "press and hold" mechanic
+local function handleInput(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+		if player:GetAttribute("InGame") ~= true then return end
+
+		if input.UserInputState == Enum.UserInputState.Begin then
+			if _G.StartPowerMeter then
+				print("✅ Button pressed. Starting power meter.")
+				_G.StartPowerMeter(onPowerSelected)
+			end
+		elseif input.UserInputState == Enum.UserInputState.End then
+			if _G.StopPowerMeter then
+				print("🔼 Button released. Finalizing power.")
+				_G.StopPowerMeter()
+			end
+		end
+	end
+end
+
+-- Listen for press and release on the button itself
+launchButton.InputBegan:Connect(handleInput)
+launchButton.InputEnded:Connect(handleInput)
+
+-- (Optional) Add this part back if you still want the 'E' key to work
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+	if gameProcessed then return end
+	if input.KeyCode == Enum.KeyCode.E then
+		handleInput(input)
+	end
+end)
+UserInputService.InputEnded:Connect(function(input, gameProcessed)
+	if gameProcessed then return end
+	if input.KeyCode == Enum.KeyCode.E then
+		handleInput(input)
+	end
+end)
