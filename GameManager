@@ -1,0 +1,51 @@
+-- This is the updated GameManager ModuleScript
+local GameManager = {}
+
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local ServerScriptService = game:GetService("ServerScriptService")
+local Workspace = game:GetService("Workspace")
+
+-- Get the new HoleManager module
+local HoleManager = require(ReplicatedStorage:WaitForChild("HoleManager"))
+local ResetCameraEvent = ReplicatedStorage:WaitForChild("ResetCameraEvent")
+
+-- Define the locations for your spawns
+local SPAWN_LOCATIONS = {
+	Clubhouse = Workspace:WaitForChild("ClubhouseSpawn").CFrame,
+	Hole1 = Workspace:WaitForChild("Holes"):WaitForChild("Hole1"):WaitForChild("Spawn").CFrame
+}
+
+-- Private helper function to handle all teleports
+local function teleportPlayer(player, targetCFrame)
+	-- ... (this function is the same as before) ...
+end
+
+-- Call this function to START the game for a player
+function GameManager.StartGame(player)
+	print("Starting game for " .. player.Name)
+
+	-- Set the active hole number using your HoleManager
+	HoleManager.CurrentHole = 1
+
+	-- Set the player's state so the launch button will work
+	player:SetAttribute("InGame", true)
+
+	local character = player.Character
+	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+	if humanoid then
+		-- Lock player movement
+		humanoid.WalkSpeed = 0
+		humanoid.JumpPower = 0
+		humanoid.JumpHeight = 0
+	end
+
+	-- Teleport the player to Hole 1
+	teleportPlayer(player, SPAWN_LOCATIONS.Hole1)
+end
+
+-- Call this function to END the game for a player
+function GameManager.EndGame(player)
+	-- ... (this function is the same as before) ...
+end
+
+return GameManager
