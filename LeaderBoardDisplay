@@ -1,0 +1,78 @@
+-- Final Production Leaderboard Script (Corrected Path)
+
+--// SERVICES & GUI REFERENCES //--
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+-- The script's parent IS the SurfaceGui, so we just reference it directly.
+local SurfaceGui = script.Parent
+local Container = SurfaceGui:WaitForChild("Container")
+local Template = Container:WaitForChild("Template")
+
+-- Hide the master template so we can clone it
+Template.Visible = false
+
+--// FUNCTIONS //--
+
+-- This function updates the entire display.
+local function updateDisplay()
+	-- Get player data and sort it by XP
+	local playersData = {}
+	for _, player in ipairs(Players:GetPlayers()) do
+		local leaderstats = player:FindFirstChild("leaderstats")
+		-- We check for both Level and XP to make sure leaderstats are fully created
+		if leaderstats and leaderstats:FindFirstChild("Level") and leaderstats:FindFirstChild("XP") then
+			table.insert(playersData, {
+				Name = player.DisplayName,
+				Score = leaderstats.XP.Value, -- Directly reference the XP value
+				UserId = player.UserId
+			})
+		end
+	end
+
+	-- Sort the table by score in descending order
+	table.sort(playersData, function(a, b) return a.Score > b.Score end)
+
+	-- Clear old clones from the container
+	for _, child in ipairs(Container:GetChildren()) do
+		if child.Name == "TemplateClone" then
+			child:Destroy()
+		end
+	end
+
+	-- Create new entries for the top players
+	for i = 1, math.min(10, #playersData) do
+		local playerData = playersData[i]
+		local newEntry = Template:Clone()
+		newEntry.Name = "TemplateClone"
+
+		-- Set the text and image on the new entry
+		newEntry.RankLabel.Text = "#" .. i
+		newEntry.PlayerName.Text = playerData.Name
+		newEntry.XPScore.Text = tostring(playerData.Score)
+
+		local content, isReady = Players:GetUserThumbnailAsync(playerData.UserId, Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size420x420)
+		if isReady then
+			newEntry.ImageLabel.Image = content
+		end
+
+		newEntry.Visible = true
+		newEntry.Parent = Container
+	end
+end
+
+--// INITIALIZATION & MAIN LOOP //--
+
+-- Wait a few seconds for the game and XPManager to load the first player
+task.wait(3)
+
+-- Run the first update
+updateDisplay()
+
+-- Update whenever a player joins or leaves for instant feedback
+Players.PlayerAdded:Connect(updateDisplay)
+Players.PlayerRemoving:Connect(updateDisplay)
+
+-- Also update every minute to catch any score changes
+while task.wait(60) do
+	updateDisplay()
+end
